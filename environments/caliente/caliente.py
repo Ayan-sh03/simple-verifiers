@@ -1,45 +1,38 @@
 import verifiers as vf
 import random
-from typing import Tuple,Optional,Dict,List
 from math import exp
-
+from typing import Tuple, Optional, Dict, List
 
 class Caliente(vf.Environment):
-    def __init__(self,row:int , col:int, max_turns:Optional[int]):
+    def __init__(self, row: int, col: int, max_turns: Optional[int] = None):
         self.row = row
         self.col = col
-        self.secret : Tuple[int,int] = (row,col)
-        self.max_turns  = max_turns or row*col # defaults to total elements , can be changed for stricter constraints
-
+        self.max_turns = max_turns or (row * col)
         self.reset()
 
-
-    def reset(self):
-        """Start a new game with fresh board and return initial setup"""
+    def reset(self) -> Dict:
         self.x = random.randint(0, self.row - 1)
         self.y = random.randint(0, self.col - 1)
         self.turns = 0
         return {"row": self.row, "col": self.col}
-    
+
+    @staticmethod
     def score(dx: int, dy: int) -> float:
         d = abs(dx) + abs(dy)
-        if d == 0:
-            return 1.0
-        return exp(-d / 2.5)   # 2.5 keeps ~0.2 at d=4
+        return 1.0 if d == 0 else exp(-d / 2.5)
 
     def step(self, action: Tuple[int, int]):
+        ax, ay = action
+        if not (0 <= ax < self.row and 0 <= ay < self.col):
+            return {"row": self.row, "col": self.col}, -1.0, False, {"message": "out_of_bounds"}
+
         self.turns += 1
-        dx = action[0] - self.x
-        dy = action[1] - self.y
+        dx, dy = ax - self.x, ay - self.y
         distance = abs(dx) + abs(dy)
+        done = (distance == 0) or (self.turns >= self.max_turns)
+        reward = 1.0 if distance == 0 else (self.score(dx, dy) if not done else -1.0)
 
-        obs = {"row": self.row, "col": self.col}
-        done = (distance == 0)
-        
-        reward = 1.0 if done else exp(-distance / 2.5)
-
-        # human-readable hint
-        if done:
+        if distance == 0:
             msg = "Correct!"
         elif distance == 1:
             msg = "burning"
@@ -52,35 +45,8 @@ class Caliente(vf.Environment):
         else:
             msg = "cold"
 
-        info = {"message": msg, "distance": distance}
-        return obs, reward, done, info
-    
-    
-    def render(self):
-        print(f"Guess a coordinate between (0, 0) and ({self.row - 1}, {self.col - 1})")
+        obs = {"row": self.row, "col": self.col}
+        return obs, reward, done, {"message": msg, "distance": distance}
 
-    def rollout(self, policy_fn, max_steps: Optional[int] = None) -> List[Tuple[Tuple[int, int], float, bool, Dict]]:
-        
-        history = []
-        obs = self.reset()
-        
-        step = 0
-        while True:
-            action = policy_fn(obs)  # agent provides a guess based on observations
-            obs_next, reward, done, info = self.step(action)
-            history.append((action, reward, done, info))
-            
-            if done:
-                break
-            obs = obs_next
-            step += 1
-            if max_steps and step >= max_steps:
-                break
-            
-        return history
-        
 def load_environment(**kwargs) -> vf.Environment:
-    '''
-    Loads a custom environment.
-    '''
     return Caliente(**kwargs)
